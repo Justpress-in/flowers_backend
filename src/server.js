@@ -10,7 +10,7 @@ const { notFound, errorHandler } = require('./middleware/error');
 
 const app = express();
 
-const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:3000')
+const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5002')
   .split(',')
   .map((s) => s.trim());
 
