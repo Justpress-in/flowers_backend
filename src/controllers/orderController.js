@@ -3,6 +3,8 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const Store = require('../models/Store');
 const User = require('../models/User');
+const Coupon = require('../models/Coupon');
+const couponController = require('./couponController');
 const asyncHandler = require('../utils/asyncHandler');
 
 function shape(o) {
@@ -24,6 +26,8 @@ function shape(o) {
     giftDetails: obj.giftDetails || null,
     unitPrice: obj.unitPrice || 0,
     price: obj.price,
+    couponCode: obj.couponCode || '',
+    discount: obj.discount || 0,
     customerName: obj.customerName || '',
     customerPhone: obj.customerPhone || '',
     customerEmail: obj.customerEmail || '',
@@ -84,7 +88,8 @@ exports.checkout = asyncHandler(async (req, res) => {
   const productMap = new Map(products.map((p) => [p.slug, p]));
   const storeMap = new Map(stores.map((s) => [s.slug, s]));
 
-  // validate stock
+  // Snapshot line items with prices so we can compute subtotal up front
+  const lineItems = [];
   for (const item of user.cart) {
     const product = productMap.get(item.productId);
     if (!product) return res.status(400).json({ message: `Product ${item.productId} is no longer available` });
@@ -95,88 +100,89 @@ exports.checkout = asyncHandler(async (req, res) => {
         message: `${product.name} has only ${inv.stock} left at ${storeMap.get(item.storeId)?.name || item.storeId}`,
       });
     }
+    lineItems.push({ item, product, inv, store: storeMap.get(item.storeId) });
   }
 
-  // create orders + decrement stock atomically per product
+  const subtotal = lineItems.reduce((s, l) => s + l.inv.price * l.item.quantity, 0);
+
+  // Validate coupon if provided
+  let couponCode = '';
+  let discount = 0;
+  let couponDoc = null;
+  if (body.couponCode) {
+    const result = await couponController.validateForUser(userId, body.couponCode);
+    if (!result.ok) return res.status(400).json({ message: result.message });
+    couponDoc = result.coupon;
+    couponCode = result.coupon.code;
+    discount = result.discount;
+  }
+
+  // Pro-rate discount across lines so per-order price reflects what user paid
+  function makePayloads() {
+    return lineItems.map(({ item, product, inv, store }) => {
+      const lineSubtotal = inv.price * item.quantity;
+      const linePortion = subtotal > 0 ? lineSubtotal / subtotal : 0;
+      const lineDiscount = Math.round(discount * linePortion * 100) / 100;
+      return {
+        orderId: makeOrderId(),
+        userId,
+        productId: product.slug,
+        productName: product.name,
+        productImage: product.image || '',
+        storeId: store?.slug || item.storeId,
+        storeName: store?.name || item.storeId,
+        type,
+        color: item.color || '',
+        size: item.size || '',
+        quantity: item.quantity,
+        customDescription: item.customDescription || '',
+        giftDetails: type === 'gift' ? giftDetails : null,
+        unitPrice: inv.price,
+        price: Math.max(0, lineSubtotal - lineDiscount),
+        couponCode,
+        discount: lineDiscount,
+        customerName,
+        customerPhone,
+        customerEmail,
+        status: 'Confirmed',
+        inv,
+        product,
+        quantityToDeduct: item.quantity,
+      };
+    });
+  }
+
+  const payloads = makePayloads();
   const created = [];
+
+  async function place(session) {
+    for (const p of payloads) {
+      p.inv.stock = Math.max(0, p.inv.stock - p.quantityToDeduct);
+      await p.product.save(session ? { session } : undefined);
+      const cleanPayload = { ...p };
+      delete cleanPayload.inv;
+      delete cleanPayload.product;
+      delete cleanPayload.quantityToDeduct;
+      const docs = session
+        ? await Order.create([cleanPayload], { session })
+        : [await Order.create(cleanPayload)];
+      created.push(docs[0]);
+    }
+    user.cart = [];
+    if (couponDoc) {
+      couponDoc.usedCount = (couponDoc.usedCount || 0) + 1;
+      await couponDoc.save(session ? { session } : undefined);
+    }
+    await user.save(session ? { session } : undefined);
+  }
+
   const session = await mongoose.startSession();
   try {
-    await session.withTransaction(async () => {
-      for (const item of user.cart) {
-        const product = productMap.get(item.productId);
-        const store = storeMap.get(item.storeId);
-        const inv = product.storeInventory.find((s) => s.storeId === item.storeId);
-        inv.stock = Math.max(0, inv.stock - item.quantity);
-        await product.save({ session });
-
-        const unitPrice = inv.price;
-        const order = await Order.create(
-          [
-            {
-              orderId: makeOrderId(),
-              userId,
-              productId: product.slug,
-              productName: product.name,
-              productImage: product.image || '',
-              storeId: store?.slug || item.storeId,
-              storeName: store?.name || item.storeId,
-              type,
-              color: item.color || '',
-              size: item.size || '',
-              quantity: item.quantity,
-              customDescription: item.customDescription || '',
-              giftDetails: type === 'gift' ? giftDetails : null,
-              unitPrice,
-              price: unitPrice * item.quantity,
-              customerName,
-              customerPhone,
-              customerEmail,
-              status: 'Confirmed',
-            },
-          ],
-          { session }
-        );
-        created.push(order[0]);
-      }
-      user.cart = [];
-      await user.save({ session });
-    });
+    await session.withTransaction(() => place(session));
   } catch (err) {
-    // Atlas free tier may not allow transactions on a non-replicated database; fall back to sequential
     if (err?.code === 20 || err?.codeName === 'IllegalOperation' || /Transaction numbers/i.test(err?.message || '')) {
       created.length = 0;
-      for (const item of user.cart) {
-        const product = productMap.get(item.productId);
-        const store = storeMap.get(item.storeId);
-        const inv = product.storeInventory.find((s) => s.storeId === item.storeId);
-        inv.stock = Math.max(0, inv.stock - item.quantity);
-        await product.save();
-        const unitPrice = inv.price;
-        const o = await Order.create({
-          orderId: makeOrderId(),
-          userId,
-          productId: product.slug,
-          productName: product.name,
-          productImage: product.image || '',
-          storeId: store?.slug || item.storeId,
-          storeName: store?.name || item.storeId,
-          type,
-          color: item.color || '',
-          size: item.size || '',
-          quantity: item.quantity,
-          customDescription: item.customDescription || '',
-          giftDetails: type === 'gift' ? giftDetails : null,
-          unitPrice,
-          price: unitPrice * item.quantity,
-          customerName,
-          customerPhone,
-          customerEmail,
-          status: 'Confirmed',
-        });
-        created.push(o);
-      }
-      user.cart = [];
-      await user.save();
+      await place(null);
     } else {
       throw err;
     }
@@ -184,9 +190,14 @@ exports.checkout = asyncHandler(async (req, res) => {
     session.endSession();
   }
 
+  const total = created.reduce((s, o) => s + o.price, 0);
+
   res.status(201).json({
     orders: created.map(shape),
-    total: created.reduce((s, o) => s + o.price, 0),
+    subtotal,
+    discount,
+    couponCode,
+    total,
   });
 });
 
