@@ -4,6 +4,8 @@ const router = express.Router();
 
 router.use('/auth', require('./auth'));
 router.use('/admins', require('./admins'));
+router.use('/users', require('./userAuth'));
+router.use('/cart', require('./cart'));
 router.use('/products', require('./products'));
 router.use('/stores', require('./stores'));
 router.use('/orders', require('./orders'));
@@ -25,6 +27,18 @@ router.get('/', (_req, res) => {
       'PUT    /api/admins/:id          (admin)',
       'PATCH  /api/admins/:id/password (admin)',
       'DELETE /api/admins/:id          (admin)',
+      'POST   /api/users/register',
+      'POST   /api/users/login',
+      'POST   /api/users/refresh',
+      'POST   /api/users/logout',
+      'GET    /api/users/me            (user)',
+      'PATCH  /api/users/me            (user)',
+      'GET    /api/cart                (user)',
+      'POST   /api/cart/items          (user)',
+      'PATCH  /api/cart/items/:id      (user)',
+      'DELETE /api/cart/items/:id      (user)',
+      'DELETE /api/cart                (user)',
+      'POST   /api/cart/merge          (user)',
       'GET    /api/products',
       'GET    /api/products/:id',
       'POST   /api/products            (admin)',
@@ -35,7 +49,8 @@ router.get('/', (_req, res) => {
       'PUT    /api/stores/:id          (admin)',
       'DELETE /api/stores/:id          (admin)',
       'GET    /api/orders              (admin)',
-      'POST   /api/orders',
+      'GET    /api/orders/mine         (user)',
+      'POST   /api/orders/checkout     (user, places orders from cart)',
       'PATCH  /api/orders/:id/status   (admin)',
       'GET    /api/events',
       'POST   /api/events',
