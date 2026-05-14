@@ -32,6 +32,8 @@ const orderSchema = new mongoose.Schema(
     customerName: { type: String, default: '' },
     customerPhone: { type: String, default: '' },
     customerEmail: { type: String, default: '' },
+    customerAddress: { type: String, default: '' },
+    basePrice: { type: Number, default: 0, min: 0 },
     status: {
       type: String,
       enum: ['Confirmed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],

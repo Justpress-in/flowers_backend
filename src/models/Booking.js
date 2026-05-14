@@ -7,6 +7,8 @@ const bookingSchema = new mongoose.Schema(
     customerName: { type: String, required: true },
     customerPhone: { type: String, required: true },
     customerEmail: { type: String, default: '' },
+    customerAddress: { type: String, default: '' },
+    basePrice: { type: Number, default: 0, min: 0 },
     storeId: { type: String, default: '' },
     storeName: { type: String, default: '' },
     serviceType: {

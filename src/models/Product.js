@@ -3,7 +3,16 @@ const mongoose = require('mongoose');
 const inventorySchema = new mongoose.Schema(
   {
     storeId: { type: String, required: true },
+    // Effective selling price (kept for back-compat; mirrors offeredPrice when both set).
     price: { type: Number, required: true, min: 0 },
+    // Internal cost / wholesale price — what we pay to acquire the stock.
+    stockPrice: { type: Number, default: 0, min: 0 },
+    // Sticker / MRP shown struck-through when a discount is active.
+    basePrice: { type: Number, default: 0, min: 0 },
+    // What the customer actually pays.
+    offeredPrice: { type: Number, default: 0, min: 0 },
+    // 0–100; flat discount alternative supported via offeredPrice directly.
+    discountPercent: { type: Number, default: 0, min: 0, max: 100 },
     stock: { type: Number, required: true, min: 0, default: 0 },
   },
   { _id: false }

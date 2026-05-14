@@ -31,6 +31,8 @@ function shape(o) {
     customerName: obj.customerName || '',
     customerPhone: obj.customerPhone || '',
     customerEmail: obj.customerEmail || '',
+    customerAddress: obj.customerAddress || '',
+    basePrice: obj.basePrice || 0,
     status: obj.status,
     trackingUrl: obj.trackingUrl || '',
     date: obj.date,
@@ -78,6 +80,7 @@ exports.checkout = asyncHandler(async (req, res) => {
   const customerName = body.customerName || user.name || '';
   const customerPhone = body.customerPhone || user.phone || '';
   const customerEmail = body.customerEmail || user.email || '';
+  const customerAddress = body.customerAddress || user.address || '';
 
   const productIds = [...new Set(user.cart.map((i) => i.productId))];
   const storeIds = [...new Set(user.cart.map((i) => i.storeId))];
@@ -103,7 +106,9 @@ exports.checkout = asyncHandler(async (req, res) => {
     lineItems.push({ item, product, inv, store: storeMap.get(item.storeId) });
   }
 
-  const subtotal = lineItems.reduce((s, l) => s + l.inv.price * l.item.quantity, 0);
+  // Use offeredPrice when available, fall back to legacy `price`.
+  const sellPriceOf = (inv) => Number(inv.offeredPrice || inv.price || 0);
+  const subtotal = lineItems.reduce((s, l) => s + sellPriceOf(l.inv) * l.item.quantity, 0);
 
   // Validate coupon if provided
   let couponCode = '';
@@ -120,7 +125,8 @@ exports.checkout = asyncHandler(async (req, res) => {
   // Pro-rate discount across lines so per-order price reflects what user paid
   function makePayloads() {
     return lineItems.map(({ item, product, inv, store }) => {
-      const lineSubtotal = inv.price * item.quantity;
+      const sell = sellPriceOf(inv);
+      const lineSubtotal = sell * item.quantity;
       const linePortion = subtotal > 0 ? lineSubtotal / subtotal : 0;
       const lineDiscount = Math.round(discount * linePortion * 100) / 100;
       return {
@@ -137,13 +143,15 @@ exports.checkout = asyncHandler(async (req, res) => {
         quantity: item.quantity,
         customDescription: item.customDescription || '',
         giftDetails: type === 'gift' ? giftDetails : null,
-        unitPrice: inv.price,
+        unitPrice: sell,
+        basePrice: Number(inv.basePrice || inv.price || 0),
         price: Math.max(0, lineSubtotal - lineDiscount),
         couponCode,
         discount: lineDiscount,
         customerName,
         customerPhone,
         customerEmail,
+        customerAddress,
         status: 'Confirmed',
         inv,
         product,
@@ -169,6 +177,9 @@ exports.checkout = asyncHandler(async (req, res) => {
       created.push(docs[0]);
     }
     user.cart = [];
+    if (body.customerAddress && body.customerAddress !== user.address) {
+      user.address = body.customerAddress;
+    }
     if (couponDoc) {
       couponDoc.usedCount = (couponDoc.usedCount || 0) + 1;
       await couponDoc.save(session ? { session } : undefined);

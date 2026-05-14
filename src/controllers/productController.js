@@ -2,6 +2,26 @@ const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
 const { slugify, randomId } = require('../utils/slug');
 
+function shapeInv(inv) {
+  const basePrice = Number(inv.basePrice || inv.price || 0);
+  const offeredPrice = Number(inv.offeredPrice || inv.price || 0);
+  const discountPercent =
+    inv.discountPercent != null
+      ? Number(inv.discountPercent)
+      : basePrice > 0 && offeredPrice < basePrice
+      ? Math.round(((basePrice - offeredPrice) / basePrice) * 100)
+      : 0;
+  return {
+    storeId: inv.storeId,
+    price: Number(inv.price || offeredPrice || basePrice || 0),
+    stockPrice: Number(inv.stockPrice || 0),
+    basePrice,
+    offeredPrice,
+    discountPercent,
+    stock: Number(inv.stock || 0),
+  };
+}
+
 function shape(p) {
   if (!p) return null;
   const obj = p.toJSON ? p.toJSON() : p;
@@ -17,10 +37,37 @@ function shape(p) {
     tags: obj.tags || [],
     availableColors: obj.availableColors || [],
     allowCustomDescription: !!obj.allowCustomDescription,
-    storeInventory: obj.storeInventory || [],
+    storeInventory: (obj.storeInventory || []).map(shapeInv),
     createdAt: obj.createdAt,
     updatedAt: obj.updatedAt,
   };
+}
+
+// Normalize incoming inventory rows: derive offeredPrice from discountPercent
+// when one isn't supplied, fall back to legacy `price` for older clients.
+function normalizeInventory(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r) => {
+    const basePrice = Number(r.basePrice ?? r.price ?? 0);
+    const stockPrice = Number(r.stockPrice ?? 0);
+    let discountPercent = Number(r.discountPercent ?? 0);
+    let offeredPrice = r.offeredPrice != null ? Number(r.offeredPrice) : null;
+    if (offeredPrice == null) {
+      offeredPrice = discountPercent > 0 ? Math.max(0, basePrice - (basePrice * discountPercent) / 100) : basePrice;
+    }
+    if (!discountPercent && basePrice > 0 && offeredPrice < basePrice) {
+      discountPercent = Math.round(((basePrice - offeredPrice) / basePrice) * 100);
+    }
+    return {
+      storeId: r.storeId,
+      price: Number(r.price ?? offeredPrice ?? basePrice ?? 0),
+      stockPrice,
+      basePrice,
+      offeredPrice,
+      discountPercent,
+      stock: Number(r.stock ?? 0),
+    };
+  });
 }
 
 async function uniqueSlug(base) {
@@ -72,7 +119,7 @@ exports.create = asyncHandler(async (req, res) => {
     tags: body.tags || [],
     availableColors: body.availableColors || [],
     allowCustomDescription: body.allowCustomDescription !== false,
-    storeInventory: body.storeInventory,
+    storeInventory: normalizeInventory(body.storeInventory),
   });
   res.status(201).json(shape(product));
 });
@@ -85,7 +132,10 @@ exports.update = asyncHandler(async (req, res) => {
     'name', 'category', 'type', 'description', 'image', 'images',
     'sizes', 'tags', 'availableColors', 'allowCustomDescription', 'storeInventory',
   ];
-  for (const f of fields) if (body[f] !== undefined) product[f] = body[f];
+  for (const f of fields) {
+    if (body[f] === undefined) continue;
+    product[f] = f === 'storeInventory' ? normalizeInventory(body[f]) : body[f];
+  }
   await product.save();
   res.json(shape(product));
 });

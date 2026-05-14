@@ -11,6 +11,7 @@ function shape(b) {
     customerName: obj.customerName,
     customerPhone: obj.customerPhone,
     customerEmail: obj.customerEmail || '',
+    customerAddress: obj.customerAddress || '',
     storeId: obj.storeId || '',
     storeName: obj.storeName || '',
     serviceType: obj.serviceType,
@@ -19,6 +20,7 @@ function shape(b) {
     preferredDate: obj.preferredDate,
     preferredTime: obj.preferredTime || '',
     durationMin: obj.durationMin || 30,
+    basePrice: obj.basePrice || 0,
     status: obj.status,
     adminNotes: obj.adminNotes || '',
     createdAt: obj.createdAt,
@@ -46,6 +48,7 @@ exports.create = asyncHandler(async (req, res) => {
     customerName: body.customerName,
     customerPhone: body.customerPhone,
     customerEmail: body.customerEmail || '',
+    customerAddress: body.customerAddress || '',
     storeId: body.storeId || '',
     storeName,
     serviceType: body.serviceType || 'consultation',
@@ -54,6 +57,7 @@ exports.create = asyncHandler(async (req, res) => {
     preferredDate: body.preferredDate,
     preferredTime: body.preferredTime || '',
     durationMin: Number(body.durationMin) || 30,
+    basePrice: Number(body.basePrice) || 0,
     status: 'requested',
   });
   res.status(201).json(shape(booking));
@@ -72,10 +76,12 @@ exports.update = asyncHandler(async (req, res) => {
   const booking = await Booking.findOne({ bookingId: req.params.id });
   if (!booking) return res.status(404).json({ message: 'Booking not found' });
   const body = req.body || {};
-  const fields = ['customerName', 'customerPhone', 'customerEmail', 'serviceType', 'occasion',
-    'notes', 'preferredDate', 'preferredTime', 'status', 'adminNotes', 'storeId', 'storeName'];
+  const fields = ['customerName', 'customerPhone', 'customerEmail', 'customerAddress',
+    'serviceType', 'occasion', 'notes', 'preferredDate', 'preferredTime', 'status',
+    'adminNotes', 'storeId', 'storeName'];
   for (const f of fields) if (body[f] !== undefined) booking[f] = body[f];
   if (body.durationMin !== undefined) booking.durationMin = Number(body.durationMin) || 30;
+  if (body.basePrice !== undefined) booking.basePrice = Number(body.basePrice) || 0;
   await booking.save();
   res.json(shape(booking));
 });
