@@ -22,6 +22,10 @@ router.use('/offers', require('./offers'));
 router.use('/testimonials', require('./testimonials'));
 router.use('/delivery-partners', require('./deliveryPartners'));
 router.use('/bookings', require('./bookings'));
+router.use('/price-tiers', require('./priceTiers'));
+router.use('/cities', require('./cities'));
+router.use('/home-colours', require('./homeColours'));
+router.use('/collections', require('./collections'));
 
 router.get('/', (_req, res) => {
   res.json({
@@ -47,6 +51,10 @@ router.get('/', (_req, res) => {
       testimonials: ['GET /api/testimonials', 'POST/PUT/DELETE (admin)'],
       deliveryPartners: ['GET /api/delivery-partners', 'POST/PUT/DELETE (admin)'],
       bookings: ['POST /api/bookings', 'GET /api/bookings (admin)', 'GET /api/bookings/mine (user)', 'PUT/DELETE /api/bookings/:id'],
+      priceTiers: ['GET /api/price-tiers', 'POST/PUT/DELETE (admin)'],
+      cities: ['GET /api/cities', 'POST/PUT/DELETE (admin)'],
+      homeColours: ['GET /api/home-colours', 'POST/PUT/DELETE (admin)'],
+      collections: ['GET /api/collections[?kind=showstopper|pair]', 'GET /api/collections/:id (hydrated)', 'POST/PUT/DELETE (admin)'],
       upload: ['POST /api/upload (admin)', 'POST /api/upload/multiple (admin)'],
     },
   });
